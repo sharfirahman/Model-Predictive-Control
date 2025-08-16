@@ -10,13 +10,13 @@ using StaticArrays
     function continious_dynamics(x::Vector{Float64},u::Vector{Float64})
 
         #differentiation of the dynamics to define the physics of the system, how the system "behaves" and "evolves" over time,
+        
+        x_dot = u[1]*cos(x[3]) # velocity*direction of x position
+        y_dot = u[1]*sin(x[3]) #velocity*direction of y position
+        yaw_dot = u[2]           #angular velocity
 
-        x.x_dot = u[1]*cos(yaw[1]) # velocity*direction of x position
-        x.y_dot = u[1]*sin(yaw[1]) #velocity*direction of y position
-        x.yaw_dot = u[2]           #angular velocity
 
-
-        zeta_dot =@SMatrix [x_dot ; y_dot ; yaw_dot] #differentiation of the velocity is basically accelaration,which is omega
+        zeta_dot = [x_dot ; y_dot ; yaw_dot] #differentiation of the velocity is basically accelaration,which is omega
         #B = @SMatrix [] 
         return zeta_dot 
     end
@@ -31,6 +31,14 @@ using StaticArrays
         zeta_dot = continious_dynamics(x,u)
         zeta_next = x + Ts * zeta_dot
         return zeta_next
+    end
+
+
+
+    # Forward Simulation is the technique which is giving it MPC formulation
+    function ForwardSimulation()
+
+        
     end
 
     mutable struct NonlinearMPCController
@@ -51,7 +59,7 @@ using StaticArrays
  
     
     # Solver
-    model::Model
+    #model::Model
     end
 
     #Definition of the structure of the MPC controller    
@@ -61,41 +69,85 @@ using StaticArrays
         nx, nu = 3,2 #number of states, number of control inputs
 
         Q = Diagonal([1.0, 1.0, 1.0])      # position and yaw angle weight 
-        R = Diagonal([0.1, 0.1])           # input penalties
+        R = Diagonal([0.1, 0.1])           # control penalties
     
     
         # Default constraints bounds
         u_min = [-2.0, -π/2]  # [min velocity, min angular velocity]
         u_max = [2.0, π/2]    # [max velocity, max angular velocity]
+        
 
+        #Initial_state and control
 
-        #Objective
+        x0 = [0.0, 0.0, 0.0 ] #Initial state for the robot 
+
+        #Objective function : total cost(x,u) = statecost(x) + controlcost(u)
         state_cost = 0.0
         control_cost = 0.0
         total_cost = 0.0
 
-
+        #Constraints
+        for i in 1:length(u)
+            u_constrained[i] = clamp(u[i], u_min[i], u_max[i]) 
+        end
 
         for k in 1:N
 
             for i in 1:nx
-                state_cost+=  Q*(x_ref[i]-x[i])  #trans
+                state_cost+=  Q*transpose!(x_ref[i]-x[i])  #trans
             end
             for i in 1:nu
-                control_cost+=  R * (u[i+1] - u[i]) 
+                control_cost+=  R * norm(u_constrained[i+1] - u_constrained[i]) 
             end
 
             total_cost += state_cost +control_cost
         end
+
+
+        #Constraints
+
+
+
         #use the IPOPT solver to optimize
         
     end
 
+    #Generate reference trajectory
+    function referencetrajectory(x_initial::Vector{Float64}, N::Int, Ts::Int)
+        x_ref = zeros(3,N+1)
+        u_ref = zeros(2,N)
 
-    function referencetrajectory()
-        
+        ref_velocity = 2
+        for i in 1:N
+            x_ref[1, i] = x_initial[1]+ ref_velocity * (N-1) * Ts
+            x_ref[2, i] = x_initial[2]+ ref_velocity * (N-1) * Ts
+            x_ref[3, i] = x_initial[3]   
+        end
+        return x_ref
+ 
     end
 
+
+    #Writing down a simple solver to see how controller works with optimization
+    function TestFunction()
+        Ts = 0.1
+        N = 10
+
+        #Initial parameters
+
+        x_initial = [0.0, 0.0, 0.0] # Initial x_pos, y_pos and yaw 
+
+        x_goal = [5.0, 3.0, 30]    #The end position for the 
+
+
+
+
+
+
+
+
+
+    end
     
 
 
@@ -111,11 +163,11 @@ using StaticArrays
 
 
 
-    zeta =@SMatrix [x ; y ; yaw]
+    #zeta =@SMatrix [x ; y ; yaw]
 
     #We need to discretize the dynamics from the continious Time
-    Ts = 0.1  #sample time
-    N = 10 #Optimization Horizon
+    #Ts = 0.1  #sample time
+    #N = 10 #Optimization Horizon
     
 end
 
