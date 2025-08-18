@@ -2,7 +2,8 @@ module MPCJulia
 using ControlSystems
 using LinearAlgebra
 using StaticArrays
-
+using JuMP
+using Plots
 
 
     #define the dynamics of the quadrotor 
@@ -41,6 +42,9 @@ using StaticArrays
         
     end
 
+
+
+
     mutable struct NonlinearMPCController
     # System parameters
     Ts::Float64          # sampling time
@@ -59,7 +63,7 @@ using StaticArrays
  
     
     # Solver
-    #model::Model
+    model::Model
     end
 
     #Definition of the structure of the MPC controller    
@@ -72,7 +76,7 @@ using StaticArrays
         R = Diagonal([0.1, 0.1])           # control penalties
     
     
-        # Default constraints bounds
+        # Default constraints bounds for control
         u_min = [-2.0, -π/2]  # [min velocity, min angular velocity]
         u_max = [2.0, π/2]    # [max velocity, max angular velocity]
         
@@ -87,7 +91,7 @@ using StaticArrays
         total_cost = 0.0
 
         #Constraints
-        for i in 1:length(u)
+        for i in 1:N
             u_constrained[i] = clamp(u[i], u_min[i], u_max[i]) 
         end
 
@@ -112,22 +116,51 @@ using StaticArrays
         
     end
 
-    #Generate reference trajectory
-    function referencetrajectory(x_initial::Vector{Float64}, N::Int, Ts::Int)
+
+    function point_navigation()
+        
+    end
+
+    #Generate reference trajectory which has a constant target
+    function referencetrajectory(x_target, N, Ts)
         x_ref = zeros(3,N+1)
         u_ref = zeros(2,N)
 
         ref_velocity = 2
-        for i in 1:N
-            x_ref[1, i] = x_initial[1]+ ref_velocity * (N-1) * Ts
-            x_ref[2, i] = x_initial[2]+ ref_velocity * (N-1) * Ts
-            x_ref[3, i] = x_initial[3]   
+        for i in 1:(N+1)
+            x_ref[:,i] = x_target .+ ref_velocity * (N-1) * Ts
+            
+            println("time $i = $x_ref\n")
+            x_target =x_ref[:,i]
         end
+        
+        x_axis = range(0,10,length = 100)
+        y_axis = x_ref
+        plot(x_axis,y_axis[:,1])
         return x_ref
  
     end
 
+    function plotting(x_ref,Ts,N)
+        x_pos = x_ref[1,:]
+        y_pos = x_ref[2,:]
+        yaw = x_ref[3,:]
+        time = 0:Ts:N*Ts
 
+
+        plot(time,x_pos,linewidth=2, color=:blue,label="x(t)")
+        plot!(time,y_pos,linewidth=2, color=:red,label="y(t)")
+        plot!(time,yaw, linewidth=2, color=:green,label="yaw(t)")
+
+        
+        xlabel!("Time(s)")
+        ylabel!("State")
+        title!("Reference Trajectory" )
+
+
+
+
+    end
     #Writing down a simple solver to see how controller works with optimization
     function TestFunction()
         Ts = 0.1
