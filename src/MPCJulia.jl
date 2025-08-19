@@ -61,16 +61,17 @@ mutable struct NonlinearMPCController
     model::Model
 end
 
-function referencetrajectory(x_target, N, Ts)
+function referencetrajectory(x_initial,x_target, N, Ts)
     x_ref = zeros(3, N + 1)
     u_ref = zeros(2, N)
 
     ref_velocity = 0.2
     for i in 1:(N+1)
-        x_ref[:, i] = x_target .+ ref_velocity * Ts
+        penalty = (i - 1)/N
+        x_ref[:, i] = ((1-penalty)*x_initial ) + penalty * x_target
 
         #println("time $i = $x_ref\n")
-        x_target = x_ref[:, i]
+        #x_target = x_ref[:, i]
     end
 
     x_axis = range(0, 10, length=100)
@@ -91,15 +92,15 @@ function NonlinearMPCController()
     nx, nu = 3, 2 #number of states, number of control inputs
 
     Q = Diagonal([1.0, 1.0, 1.0])      # position and yaw angle weight 
-    R = Diagonal([0.01, 0.01])           # control penalties
+    R = Diagonal([0.1, 0.1])           # control penalties
 
 
     # Default constraints bounds for control
     u_min = [-2.0, -π / 2]  # [min velocity, min angular velocity]
     u_max = [2.0, π / 2]    # [max velocity, max angular velocity]
     x_initial = [0.0, 0.0, 0.0]
-    x_target = [5.0, 3.0, pi/4]  
-    x_ref = referencetrajectory(x_target,N,Ts)
+    x_target = [3.0, 3.0, pi/4]  
+    x_ref = referencetrajectory(x_initial,x_target,N,Ts)
     #Initial_state and control
 
     #First, we need to initialize the solver model that we are using.
@@ -118,7 +119,10 @@ function NonlinearMPCController()
     #The initial state of the robot is being sent form the main function where we are defining the initial position
     # and the target position that the robot needs to go to
 
-    @constraint(model, x[:,1] .== x_initial)
+    @constraint(model, x[:,1] == x_initial)
+    #x[:,1] == x_initial
+    # temp = value(x[:,1])
+    # println("Temp::::$temp")
 
     #Note: there cannot be any space after constraints!!!
 
@@ -126,7 +130,8 @@ function NonlinearMPCController()
     #As we already have the discritized verison of the dynamics, we need to put it in a loop
     #and treat it as a constraint with the variables that we have in the controller function
     for n in 1:N
-        @constraint(model, x[1,n+1] == x[1,n] +Ts * u[1,n] * cos(x[3,n]) )  #In the dynamics discritization, we are basically calculating the next state
+        @constraint(model, x[1,n+1] == x[1,n] +Ts * u[1,n] * cos(x[3,n]) )
+        #println("$x[1,n+1]")  #In the dynamics discritization, we are basically calculating the next state
         @constraint(model, x[2,n+1] == x[2,n] +Ts * u[1,n] * sin(x[3,n]) )
         @constraint(model, x[3,n+1] == x[3,n] +Ts * u[2,n])
         @constraint(model, u_min[1] <= u[1,n] <= u_max[1])
@@ -158,6 +163,7 @@ function NonlinearMPCController()
 
         for i in 1:nx
             state_cost += Q[i,i] * (x_ref[i,k] - x[i,k])^2  
+        
         end
         for i in 1:nu
             control_cost += R[i,i] * (u[i+1] - u[i])^2
@@ -178,7 +184,9 @@ function NonlinearMPCController()
     """)
     assert_is_solved_and_feasible(model)
 
-    return
+    #return value.(x)
+    return value.(u)
+
 
     #use the IPOPT solver to optimize
 
