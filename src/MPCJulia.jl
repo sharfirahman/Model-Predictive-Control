@@ -74,10 +74,10 @@ function referencetrajectory(x_initial,x_target, N, Ts)
         #x_target = x_ref[:, i]
     end
 
-    x_axis = range(0, 10, length=100)
-    y_axis = x_ref
-    plot(x_axis, y_axis[:, 1])
+
     return x_ref
+
+
 
 end
 
@@ -131,7 +131,8 @@ function NonlinearMPCController()
     #and treat it as a constraint with the variables that we have in the controller function
     for n in 1:N
         @constraint(model, x[1,n+1] == x[1,n] +Ts * u[1,n] * cos(x[3,n]) )
-        #println("$x[1,n+1]")  #In the dynamics discritization, we are basically calculating the next state
+        # x_val = value.(x[1,n+1])
+        # println("$x_val")  #In the dynamics discritization, we are basically calculating the next state
         @constraint(model, x[2,n+1] == x[2,n] +Ts * u[1,n] * sin(x[3,n]) )
         @constraint(model, x[3,n+1] == x[3,n] +Ts * u[2,n])
         @constraint(model, u_min[1] <= u[1,n] <= u_max[1])
@@ -139,6 +140,7 @@ function NonlinearMPCController()
     end
     
 
+ 
 
     #x0 = [0.0, 0.0, 0.0] #Initial state for the robot 
 
@@ -172,6 +174,18 @@ function NonlinearMPCController()
         total_cost += state_cost + control_cost
     end
 
+
+
+    terminal_weight = 5.0
+    terminal_cost =0.0
+    for i in 1:nx
+        #terminal_cost += terminal_weight * Q[i,i] *(x_target[i]-x[i,N+1])^2
+        terminal_cost += Q[i,i] *(x_target[i]-x[i,N+1])^2
+        
+    end
+
+    total_cost += terminal_cost
+
     #Objective function
     @objective(model,Min,total_cost)
     optimize!(model)
@@ -184,11 +198,16 @@ function NonlinearMPCController()
     """)
     assert_is_solved_and_feasible(model)
 
+     x_actual = value.(x)
     #return value.(x)
-    return value.(u)
-
+    
+        #plotting
+    println("Trajectory points: $x_actual\n")
+    return x_actual
 
     #use the IPOPT solver to optimize
+
+
 
 end
 
@@ -198,26 +217,69 @@ end
 #Generate reference trajectory which has a constant target
 
 
-# function plotting(x_ref, Ts, N)
-#     x_pos = x_ref[1, :]
-#     y_pos = x_ref[2, :]
-#     yaw = x_ref[3, :]
-#     time = 0:Ts:N*Ts
+function plotting(x_ref,x_actual,Ts, N)
+
+    
+
+    x_pos = x_ref[1, :]
+    y_pos = x_ref[2, :]
+    yaw = x_ref[3, :]
+    time = 0:Ts:(N*Ts)
 
 
-#     plot(time, x_pos, linewidth=2, color=:blue, label="x(t)")
-#     plot!(time, y_pos, linewidth=2, color=:red, label="y(t)")
-#     plot!(time, yaw, linewidth=2, color=:green, label="yaw(t)")
+    x_pos1 = x_actual[1, :]
+    y_pos1 = x_actual[2, :]
+    yaw1 = x_actual[3, :]
+    time = 0:Ts:(N*Ts)
+
+    # x_pos = x_ref[1, :]
+    # y_pos = x_ref[2, :]
+    # yaw = x_ref[3, :]
+    # time = 0:Ts:(N*Ts)
+
+    #println("$x_pos")
+
+    point = sqrt.(x_pos.^2 +y_pos.^2 +yaw.^2)
+    #print("$point")
+
+    p = plot(time, point,  
+              label = "reference trajectory",
+              xlabel="Time (s)",
+              ylabel="State Value",
+              title="Reference vs. Calculated Trajectory",
+              linewidth=2,
+              marker=:circle,
+              markersize=4,
+              grid=true)
+    
+        #display(p)
 
 
-#     xlabel!("Time(s)")
-#     ylabel!("State")
-#     title!("Reference Trajectory")
+    point1 =sqrt.(x_pos1.^2 +y_pos1.^2 +yaw1.^2)
+    #print("$point")
+
+    p1 = plot!(p,time,point1,
+            label="Calculated Trajectory",
+            linewidth=2,
+            marker=:square,
+            markersize=4)
+
+    # p1 = plot(time, point1,  
+    #           label = "Trajectory tracking",
+    #           xlabel="Time (s)",
+    #           ylabel="State Value",
+    #           title="States vs Time",
+    #           linewidth=2,
+    #           marker=:circle,
+    #           markersize=4,
+    #           grid=true)
+    
+    #     display(p1)
 
 
 
 
-# end
+end
 #Writing down a simple solver to see how controller works with optimization
 function TestFunction()
 
@@ -234,10 +296,17 @@ function TestFunction()
     x_target = [5.0, 3.0, pi/4]    #The end position for the 
 
 
-    x_ref = referencetrajectory(x_target,N,Ts)
+    x_ref = referencetrajectory(x_initial,x_target,N,Ts)
+
+
+    x_actual = NonlinearMPCController()
+
+    traj_plotting = plotting(x_ref,x_actual,Ts,N)
+
+    return traj_plotting
     
-    optimization = NonlinearMPCController(x_ref,x_initial,N, Ts)
-    println("Optimization result = $optimization")
+    #optimization = NonlinearMPCController(x_ref,x_initial,N, Ts)
+    #println("Optimization result = $optimization")
 
 
 end

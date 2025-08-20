@@ -19,6 +19,6 @@ u(x,t)  = -L*x .+ 1.5(t>=2.5) # Form control law (u is a function of t and x), a
 t       = 0:Ts:5              # Time vector
 x0      = [1,0]               # Initial condition
 res = lsim(sys,u,t,x0=x0)
-plot(res, lab=["Position" "Velocity"], ploty=false, plotx=true, layout=1, sp=1)
+#plot(res, lab=["Position" "Velocity"], ploty=false, plotx=true, layout=1, sp=1)
 
 #  save_docs_plot("lqrplot.svg"); # hide
