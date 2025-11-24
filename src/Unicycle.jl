@@ -16,23 +16,48 @@ struct RobotParameters
  end
 
 
- function RobotDynamics(state,control,dt)
+#  function RobotDynamics(state,control,dt)
     
-    x,y, theta = state
-    v,omega = control
+#     x,y, theta = state
+#     v,omega = control
 
-    theta_new = theta + omega*dt
+#     theta_new = theta + omega*dt
+#     theta_new = atan(sin(theta_new), cos(theta_new))  #normalization
+
+#     return [x+v*cos(theta)*dt, y+v*sin(theta)*dt, theta_new ]
+#  end
+
+# Double integrator
+
+function RobotDynamics(state,control,dt)
+
+    x,y,z,vx,vy,vz, theta = state
+    omega,acceleration = control
+
+    vx_new = vx + acceleration*dt  #v = v_0 + at
+    vy_new = vy + acceleration*dt
+    vz_new = vz + acceleration*dt 
+
+    x_new = x+ vx_new*cos(theta)*dt # x = x_0 + vcos(theta)
+    y_new = y+ vy_new*sin(theta)*dt # y = y_0 + vsin(theta)
+    z_new = z+ vz_new*dt
+
+    theta_new = theta + omega*dt                        #yaw_angle
     theta_new = atan(sin(theta_new), cos(theta_new))  #normalization
 
-    return [x+v*cos(theta)*dt, y+v*sin(theta)*dt, theta_new ]
- end
+    return [x_new, y_new, z_new, vx_new, vy_new, vz_new, theta_new ]
+
+end
+
+
+
 
  function SafeTrajectory(x_current,u_current,RobotParameters)
 
     
     
     N= RobotParameters.N
-    states = 3
+    states = 6
     control = 2
     radius = 1.0
     cx,cy = 0.0,0.0
@@ -56,11 +81,11 @@ struct RobotParameters
     @constraint(model, x[:,1] == x_current)
     #@constraint(model, u[:,1] == u_current)
    # @constraint(model, -RobotParameters.u_min[1] <= u[1:N] <= RobotParameters.u_max[1])
-   # @constraint(model, -RobotParameters.u_min[2] <= u[2:N] <= RobotParameters.u_max[2])
+   # @constraint(model, -RobotParameters.u_min[2] <= u[2:N] <= RobotParamet ers.u_max[2])
     #@constraint(model, RobotParameters.Dist == 0.5)  #safety constraints
 
 
-    #System Dynamics
+    #System Dynamics- forward eular model
     for k in 1:N
         @constraint(model, RobotParameters.u_min[1]<=u[1,k]<=RobotParameters.u_max[1])
         @constraint(model, -RobotParameters.u_min[2]<=u[2,k]<=RobotParameters.u_max[2])
@@ -103,7 +128,7 @@ struct RobotParameters
 
     for k in 1:N
 
-        #Robot Distance from the center
+        #Robot Distance from the centere
         error_position_x = x[1,k]-cx
         error_position_y = x[2,k]-cy
 
@@ -111,7 +136,7 @@ struct RobotParameters
         #circular_velocity = u[2,k]*error_position_x + (u[2,k]*error_position_y)
         #cost += circular_velocity^2
 
-        #approaching and staying on the circle cost
+        #approaching and staying on the circle cost -Circular cost
         distance_from_circle = error_position_x^2 + error_position_y^2
         distance_cost = (distance_from_circle - radius^2)^2 #circular cost calculation
         #distance_cost = 
@@ -126,10 +151,10 @@ struct RobotParameters
 
         #cost += heading_error^2
 
-
+        # Motion cost
         circular_motion = (u[1,k] /radius)
         omega_error = u[2,k] - circular_motion
-        cost -= omega_error^2
+        cost += -omega_error^2
 
 
 
@@ -139,90 +164,23 @@ struct RobotParameters
         angular_control_cost = u[2,k]^2
         cost += angular_control_cost
 
-        #for clockwise motion
-        #clockwise = cos(x[3,k] * (-error_position_y/distance_from_circle)) + sin(x[3,k] * (error_position_x/distance_from_circle))
-        #cost -=(1- clockwise)^2
 
-        #For clockwise motion
-        #clockwise_motion = (u[2,k]*error_position_y-u[2,k]*error_position_x) + pi/2
-        #cost += clockwise_motion
+        #reward costs start here 
+        reward = 0.0
 
-        #clockwise motion with angular velocity
-        # desired_angular_velocity = desired_velocity / radius  # = 0.8 rad/s
-        # angular_velocity_cost = (u[2, k] - desired_angular_velocity)^2
-        # cost += 5.0 * angular_velocity_cost
-        # desired_heading = atan(-error_position_x,error_position_y)
-        # heading_error = x[3,k] - desired_heading
-        # heading_error = atan(sin(heading_error),cos(heading_error))
-        # cost += heading_error^2
+
         
-            #clockwise_motion = (u[2] - u[2])^2
-            #cost += clockwise_motion
-            
+
         
 
         
 
-    #     #here we are calulating the motion cost around the circle
-    # #     if distance_from_circle == radius
-    #         #position_angle =  atan(error_position_y,error_position_x)
-    #         position_angle = atan(x[2,k],x[1,k]) +pi/2
-            
 
-    #         desired_velocity_angle = atan(error_distance_cost,RobotParameters.Ts)  #this basically tells the robot which way to go
-
-    #         angle_error = desired_velocity_angle - position_angle
-    #         #angle_error = atan(sin(angle_error), cos(angle_error))
-    #         angle_cost = 50*angle_error^2
-
-    #         cost += angle_cost
-    # #    end
-
-    #     cost += distance_cost  
     end
 
 
 
-       """
-        if phase == "straight"
-            distance_error = distance_cost -RobotParameters.Dist
-            cost += distance_error^2
-        
-        elseif phase == "circle"
-            #maintaining the distance
-            distance_error = distance_cost -RobotParameters.Dist
-            cost += distance_error^2
-
-            if distance_error > 1e-6
-                direction_x = current_position_x / distance_cost
-                direction_y = current_position_y / distance_cost
-                rotation_x = - direction_y
-                rotation_y = direction_x
-
-
-                #we need a speed that will keep the robot in the circular Trajectory
-                desired_vel = 1.5 #We are assuming this will keep the robot in the circular trajectory
-                desired_velocity_x = rotation_x * desired_vel
-                desired_velocity_y = rotation_y * desired_vel
-
-                #This is where we are calculating the control error, which keeps the robot in a speed to keep into the circle
-                velocity_error_x = u[1,k] - desired_velocity_x
-                velocity_error_y = u[2,k] - desired_velocity_y
-
-                cost += velocity_error_x^2 +velocity_error_y^2
-
-                #Circle constraint, it keep the velocity with direction the same and the robot in the circle trajectory
-
-                cost+= 0.5 * (u[1,k]*direction_x + u[2,k]*direction_y)^2
-
-            end
-
-            
-
-        end
-        """
-
-
+       
 
         
 
@@ -391,33 +349,64 @@ function main()
 
     #println("x_points: $x_points")
     
-    plt = plot(
-        # #trajectory_1, 
-        # pos_opt[1,:],
-        # pos_opt[2,:],
-        # #x_points,
-        # #y_points,
-        # linewidth=2,
-        # legend =nothing,
-        title ="Circular Trajectory",
-        xlabel = "x_points",
-        ylabel = "y_points",
-        #zlabel = "time",
-        aspect_ratio=:equal
-        )
+    # plt = plot3d(
+    #     # #trajectory_1, 
+    #     # pos_opt[1,:],
+    #     # pos_opt[2,:],
+    #     # #x_points,
+    #     # #y_points,
+    #     # linewidth=2,
+    #     # legend =nothing,
+    #     1,
+    #     xlim = (-4,4),
+    #     ylim = (-4,4),
+    #     zlim = (0,40),
+    #     title ="Circular Trajectory",
+    #     xlabel = "x_points",
+    #     ylabel = "y_points",
+    #     zlabel = "time",
+    #     aspect_ratio=:equal
+    #     )
 
-    plot!(plt,
-        trajectory_1,
-        trajectory_2,
-        #time_vec,
-        color=:blue,
-        label="Robot Trajectory"
-    )
+    # plot!(plt,
+    #     trajectory_1,
+    #     trajectory_2,
+    #     time_vec,
+    #     color=:blue,
+    #     label="Robot Trajectory"
+    # )
 
-    #scatter!(plt, [trajectory_1[1],trajectory_2[1]], color=:red,markersize=8,label="")
+
+    # @gif for i=1:1500
+        
+    #     push!(plt,trajectory_1,trajectory_2,time_vec) 
+        
+    # end every 1
+    gr()
+    anim = @animate for i in eachindex(time_vec)
+        traj_1 = trajectory_1[1:i]
+        traj_2 = trajectory_2[1:i]
+        
+        plot(traj_1, traj_2, linecolor = :blue)
+        plot!(xlims = (-4, 4), xticks = -4:0.5:4)
+        plot!(ylims = (-5, 5), yticks = -5:0.5:5)
+
+        scatter!(traj_1,traj_2,
+                markersize = 0.5,
+                )
+        # scatter!(
+        #     traj_1,
+        #     traj_2,
+        #     color = :orange,
+        #     markersize = 2,
+        #     markerstrokewidth = 0,
+        #     markerstrokecolor = :orange,
+        # )
+        annotate!(-2.25, 2.5, "time= $(rpad(round(time_vec[i]; digits = 2), 4, "0")) s")
+    end
     
-    
-    display(plt)
+    gif(anim,"SafeRobot.gif", fps = 10)
+    #display(plt)
     
 end
 end
