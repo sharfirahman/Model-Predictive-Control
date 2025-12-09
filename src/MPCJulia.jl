@@ -32,6 +32,7 @@ function discrete_dynamics(x::Vector{Float64}, u::Vector{Float64}, Ts::Float64)
     """
     zeta_dot = continious_dynamics(x, u)
     zeta_next = x + Ts * zeta_dot
+    println("zeta_next: $zeta_next")
     return zeta_next
 end
 
@@ -98,8 +99,10 @@ function NonlinearMPCController()
     # Default constraints bounds for control
     u_min = [-2.0, -π / 2]  # [min velocity, min angular velocity]
     u_max = [2.0, π / 2]    # [max velocity, max angular velocity]
-    x_initial = [0.0, 0.0, 0.0]
-    x_target = [3.0, 3.0, pi/4]  
+    x_initial = [0.0, 0.0, 0.0] # Initial x_pos, y_pos and yaw 
+
+    x_target = [3.0, 3.0, pi/4]    #The end position for the 
+
     x_ref = referencetrajectory(x_initial,x_target,N,Ts)
     #Initial_state and control
 
@@ -120,6 +123,7 @@ function NonlinearMPCController()
     # and the target position that the robot needs to go to
 
     @constraint(model, x[:,1] == x_initial)
+    @constraint(model, x[:,N+1] == x_target)
     #x[:,1] == x_initial
     # temp = value(x[:,1])
     # println("Temp::::$temp")
@@ -129,14 +133,14 @@ function NonlinearMPCController()
     #We need to declare all the input as a constraint, which is basically a JuMP convention;
     #As we already have the discritized verison of the dynamics, we need to put it in a loop
     #and treat it as a constraint with the variables that we have in the controller function
-    for n in 1:N
+    for n in 2:N-1
         @constraint(model, x[1,n+1] == x[1,n] +Ts * u[1,n] * cos(x[3,n]) )
         # x_val = value.(x[1,n+1])
         # println("$x_val")  #In the dynamics discritization, we are basically calculating the next state
         @constraint(model, x[2,n+1] == x[2,n] +Ts * u[1,n] * sin(x[3,n]) )
         @constraint(model, x[3,n+1] == x[3,n] +Ts * u[2,n])
-        @constraint(model, u_min[1] <= u[1,n] <= u_max[1])
-        @constraint(model, u_min[2] <= u[2,n] <= u_max[2])
+       @constraint(model, u_min[1] <= u[1,n] <= u_max[1])
+       @constraint(model, u_min[2] <= u[2,n] <= u_max[2])
     end
     
 
@@ -161,26 +165,26 @@ function NonlinearMPCController()
     #We have taken the diagonal weighted matrix for the state and control cost, which makes it easier to track the error for 
     #the different parts of the state(x_pos,y_pos,yaw)
 
-    for k in 1:N
+    for k in 1:N-1
 
         for i in 1:nx
             state_cost += Q[i,i] * (x_ref[i,k] - x[i,k])^2  
+            #state_cost += (x_ref[i,k] - x[i,k])^2 
         
         end
         for i in 1:nu
-            control_cost += R[i,i] * (u[i+1] - u[i])^2
+        #     #control_cost += R[i,i] * (u[i,k] - u[i,k-1])^2
+             control_cost += transpose(u[i,k]) * R[i,i]  * u[i,k]
         end
 
         total_cost += state_cost + control_cost
     end
 
-
-
     terminal_weight = 5.0
     terminal_cost =0.0
     for i in 1:nx
-        #terminal_cost += terminal_weight * Q[i,i] *(x_target[i]-x[i,N+1])^2
-        terminal_cost += Q[i,i] *(x_target[i]-x[i,N+1])^2
+        terminal_cost += terminal_weight * Q[i,i] *(x_target[i]-x[i,N+1])^2
+        #terminal_cost +=(x_target[i]-x[i,N+1])^2
         
     end
 
@@ -198,11 +202,14 @@ function NonlinearMPCController()
     """)
     assert_is_solved_and_feasible(model)
 
+    
+
      x_actual = value.(x)
+     u_actual = value.(u)
     #return value.(x)
     
         #plotting
-    println("Trajectory points: $x_actual\n")
+    println("Control points:u1= $u_actual[1],\n u2= $u_actual[2]")
     return x_actual
 
     #use the IPOPT solver to optimize
@@ -227,10 +234,14 @@ function plotting(x_ref,x_actual,Ts, N)
     time = 0:Ts:(N*Ts)
 
 
+    println("x_position: $x_pos")
+
+
     x_pos1 = x_actual[1, :]
     y_pos1 = x_actual[2, :]
     yaw1 = x_actual[3, :]
     time = 0:Ts:(N*Ts)
+    println("x1_position: $x_pos1")
 
     # x_pos = x_ref[1, :]
     # y_pos = x_ref[2, :]
@@ -242,8 +253,8 @@ function plotting(x_ref,x_actual,Ts, N)
     point = sqrt.(x_pos.^2 +y_pos.^2 +yaw.^2)
     #print("$point")
 
-    p = plot(time, point,  
-              label = "reference trajectory",
+    p = plot(time, x_pos,  
+              label = "reference",
               xlabel="Time (s)",
               ylabel="State Value",
               title="Reference vs. Calculated Trajectory",
@@ -255,24 +266,72 @@ function plotting(x_ref,x_actual,Ts, N)
         #display(p)
 
 
-    point1 =sqrt.(x_pos1.^2 +y_pos1.^2 +yaw1.^2)
-    #print("$point")
+    # point1 =sqrt.(x_pos1.^2 +y_pos1.^2 +yaw1.^2)
+    # #print("$point")
 
-    p1 = plot!(p,time,point1,
-            label="Calculated Trajectory",
+    p1 = plot!(p,time,x_pos1,
+            label="calculated",
             linewidth=2,
-            marker=:square,
+            marker=:circle,
             markersize=4)
 
-    # p1 = plot(time, point1,  
-    #           label = "Trajectory tracking",
+    # p1 = plot!(time, x_pos1, p, 
+    #           #label = "Trajectory tracking",
     #           xlabel="Time (s)",
-    #           ylabel="State Value",
-    #           title="States vs Time",
+    #           ylabel="x_position",
+    #           title="x_position vs Time",
     #           linewidth=2,
     #           marker=:circle,
     #           markersize=4,
     #           grid=true)
+
+
+    p_y = plot(time, y_pos,  
+              
+              xlabel="Time (s)",
+              ylabel="State Value",
+              title="Reference vs. Calculated Trajectory",
+              linewidth=2,
+              marker=:circle,
+              markersize=4
+              )
+
+   p2 = plot!(p_y,time, y_pos1,  
+              #label = "Trajectory tracking",
+              
+              linewidth=2,
+              marker=:circle,
+              markersize=4
+              )
+
+
+
+   p_yaw = plot(time, yaw,  
+              #label = "Trajectory tracking",
+              xlabel="Time (s)",
+              ylabel="yaw",
+              title="yaw vs Time",
+              linewidth=2,
+              marker=:circle,
+              markersize=4,
+              grid=true)
+
+
+   p3 = plot!(p_yaw,time, yaw1,  
+              #label = "Trajectory tracking",
+              
+              linewidth=2,
+              marker=:circle,
+              markersize=4
+              )
+
+
+
+    p_total = plot!(p1,p2,p3,layout = grid(3, 1))
+            #label="Calculated Trajectory",
+            #linewidth=2,
+            #marker=:square,
+            #markersize=4)
     
     #     display(p1)
 
@@ -293,7 +352,7 @@ function TestFunction()
 
     x_initial = [0.0, 0.0, 0.0] # Initial x_pos, y_pos and yaw 
 
-    x_target = [5.0, 3.0, pi/4]    #The end position for the 
+    x_target = [3.0, 3.0, pi/4]    #The end position for the 
 
 
     x_ref = referencetrajectory(x_initial,x_target,N,Ts)
